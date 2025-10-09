@@ -34,3 +34,5 @@ Cargo.lock
 .DS_Store
 
 .z3-trace
+
+instance.png
