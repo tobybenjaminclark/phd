@@ -3,8 +3,13 @@ name = "phd"
 version = "0.1.0"
 edition = "2024"
 
+[env]
+Z3_LIBRARY_PATH_OVERRIDE = "/opt/homebrew/lib"
+Z3_SYS_Z3_HEADER = "/opt/homebrew/include/z3.h"
+
 [dependencies]
 rand = "0.10.0-rc.0"
 itertools = "0.14.0"
 plotters = "0.3"
 plotters-bitmap = "0.3"
+z3 = "0.19.1"
