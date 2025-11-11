@@ -37,3 +37,5 @@ Cargo.lock
 
 instance.png
 /lit/
+/lit/*
+lit/*
