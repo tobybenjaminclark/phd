@@ -3,32 +3,74 @@ from enum import Enum
 from pydantic import BaseModel
 from pydantic.config import ConfigDict
 import random
+import time
+import z3
+
+
+
+class SMTConvertible:
+    def to_z3(self):    raise NotImplementedError()
+
+
+class Genetic:
+    def mutate(self):   raise NotImplementedError()
+
+    @classmethod
+    def random(cls):    raise NotImplementedError()
+
+
+
+
 
 # Operators
-class CmpOp(str, Enum):
+class CmpOp(SMTConvertible, str, Enum):
     GT = ">"
     LT = "<"
     EQ = "="
     GE = "≥"
     LE = "≤"
 
+    def to_z3(self, left, right):
+        match self:
+            case CmpOp.GT: return left > right
+            case CmpOp.LT: return left < right
+            case CmpOp.EQ: return left == right
+            case CmpOp.GE: return left >= right
+            case CmpOp.LE: return left <= right
 
-class ArithOp(str, Enum):
+
+class ArithOp(SMTConvertible, str, Enum):
     ADD = "+"
     SUB = "-"
     MUL = "×"
     DIV = "÷"
 
+    def to_z3(self, left, right):
+        match self:
+            case ArithOp.ADD: return left + right
+            case ArithOp.SUB: return left - right
+            case ArithOp.MUL: return left * right
+            case ArithOp.DIV: return left / right
+
 
 
 # Base Expressions
-class BooleanExpr(BaseModel):
+class BooleanExpr(BaseModel, Genetic, SMTConvertible):
     model_config = ConfigDict(frozen=False)
     def mutate(self):   raise NotImplementedError()
 
-class ArithExpr(BaseModel):
+    @classmethod
+    def random(_):    return random.choice([And, Or, Not, Cmp]).random()
+
+class ArithExpr(BaseModel, Genetic, SMTConvertible):
     model_config = ConfigDict(frozen=False)
     def mutate(self):   raise NotImplementedError()
+
+    @classmethod
+    def random(_):      return random.choice([Binary, Number, Symbol]).random()
+
+
+
 
 
 # Boolean Expressions
@@ -39,6 +81,11 @@ class And(BooleanExpr):
     def __init__(self,  l: BooleanExpr, r: BooleanExpr):  super().__init__(left=l, right=r)
     def __iter__(self): return iter((self.left, self.right))
     def mutate(self):   return Or(self.left, self.right)
+    def to_z3(self):    return z3.And(self.left.to_z3(), self.right.to_z3())
+
+    @classmethod
+    def random(_):      return And(BooleanExpr.random(), BooleanExpr.random())
+
 
 class Or(BooleanExpr):
     left: BooleanExpr
@@ -47,6 +94,10 @@ class Or(BooleanExpr):
     def __init__(self,  l: BooleanExpr, r: BooleanExpr):  super().__init__(left=l, right=r)
     def __iter__(self): return iter((self.left, self.right))
     def mutate(self):   return And(self.left, self.right)
+    def to_z3(self):    return z3.Or(self.left.to_z3(), self.right.to_z3())
+
+    @classmethod
+    def random(_):      return Or(BooleanExpr.random(), BooleanExpr.random())
 
 
 class Not(BooleanExpr):
@@ -55,7 +106,10 @@ class Not(BooleanExpr):
     def __init__(self, i: BooleanExpr):  super().__init__(inner=i)
     def __iter__(self): return iter((self.inner,))
     def mutate(self):   return (self.inner)
+    def to_z3(self):    return z3.Not(self.inner.to_z3())
 
+    @classmethod
+    def random(_):      return Not(BooleanExpr.random())
 
 
 class Cmp(BooleanExpr):
@@ -66,6 +120,14 @@ class Cmp(BooleanExpr):
     def __init__(self,  l: ArithExpr, o: CmpOp, r: ArithExpr):  super().__init__(left=l, op=o, right=r)
     def __iter__(self): return iter((self.left, self.right))
     def mutate(self):   return Cmp(self.left, random.choice(list(CmpOp)), self.right)
+    def to_z3(self):    return self.op.to_z3(self.left.to_z3(), self.right.to_z3())
+
+    @classmethod
+    def random(_):      return Cmp(ArithExpr.random(), random.choice(list(CmpOp)), ArithExpr.random())
+
+
+
+
 
 # Arithmetic Expressions
 class Binary(ArithExpr):
@@ -75,14 +137,22 @@ class Binary(ArithExpr):
     def __str__(self):  return f"{self.left} {self.op.value} {self.right}"
     def __init__(self,  l: ArithExpr, o: ArithOp, r: ArithExpr):  super().__init__(left=l, op=o, right=r)
     def __iter__(self): return iter((self.left, self.right))
-    def mutate(self):   return Cmp(self.left, random.choice(list(ArithOp)), self.right)
+    def mutate(self):   return Binary(self.left, random.choice(list(ArithOp)), self.right)
+    def to_z3(self):    return self.op.to_z3(self.left.to_z3(), self.right.to_z3())
+
+    @classmethod
+    def random(_):      return Binary(ArithExpr.random(), random.choice(list(ArithOp)), ArithExpr.random())
 
 class Number(ArithExpr):
     value: float
     def __str__(self):  return str(self.value)
     def __init__(self,  n: float):  super().__init__(value=n)
     def __iter__(self): return iter(())
-    def mutate(self):   return Number(self.n + random.randrange(-50, 50) / 100)
+    def mutate(self):   return Number(self.value + random.randrange(-50, 50) / 100)
+    def to_z3(self):    return z3.RealVal(self.value)
+
+    @classmethod
+    def random(cls):    return Number(random.uniform(-5, 5))
 
 class Symbol(ArithExpr):
     iden: str
@@ -90,8 +160,20 @@ class Symbol(ArithExpr):
     def __init__(self,  i: str):  super().__init__(iden=i)
     def __iter__(self): return iter(())
     def mutate(self):   return random.choice(SYMBOLS)
+    def to_z3(self):    return z3.Real(self.iden)
+
+    @classmethod
+    def random(cls):    return random.choice(SYMBOLS)
+
+
+
+
 
 SYMBOLS = list(map(lambda x: Symbol(x), ["A", "B", "C", "D"]))
+
+
+
+
 
 rule = Not(
     Cmp(
@@ -106,12 +188,7 @@ print(rule)
 
 def walk(expr):
     yield expr
-    for child in expr:
-        yield from walk(child)
-
-
-import random
-import time
+    for child in expr: yield from walk(child)
 
 # indexed walk
 def indexed_walk(expr):
@@ -131,16 +208,22 @@ def mutate_one(expr):
     nodes = list(indexed_walk(expr))
     parent, field, node = random.choice(nodes)
 
-    # User-provided node-level mutation
+    # 30% chance: subtree replacement with same type
+    if random.random() < 0.3:
+        new_node = node.__class__.random()
+        if parent is None:
+            return new_node
+        setattr(parent, field, new_node)
+        return expr
+
+    # Otherwise use node's local mutate()
     result = node.mutate()
 
-    # No replacement needed
     if result is None or result is node:
         return expr
 
-    # Replacement (e.g. removing NOT)
     if parent is None:
-        return result  # replaced root
+        return result
     setattr(parent, field, result)
     return expr
 
