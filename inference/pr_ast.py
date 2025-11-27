@@ -256,18 +256,29 @@ def implies(rule_expr):
     return imp_solver.check() == z3.unsat
 
 
-def search_for_implication(initial, max_iters=1000):
+
+
+def search_for_implication(initial, max_iters=1000, reset_prob=0.01):
     expr = initial
 
     for i in range(max_iters):
-        expr = mutate_one(expr)
+
+        # random restart
+        if random.random() < reset_prob:
+            expr = initial
+        else:
+            try:
+                expr = mutate_one(expr)
+            except:
+                pass
 
         if implies(expr):
             print(f"\nFound rule after {i} mutations:\n{expr}")
+            print(f"\nRule Simplified: {z3.simplify(expr.to_z3())}")
             return expr
 
         if i % 50 == 0:
-            print(f"[{i}] still searching…")
+            print(f"[{i}] still searching… (maybe resetting) \t \t \t")
 
     print("No rule found")
     return None
