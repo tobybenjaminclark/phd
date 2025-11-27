@@ -237,5 +237,40 @@ def mutate_loop(expr, steps=20):
         time.sleep(0.2)
 
 
-mutate_loop(rule)
 
+def implies(rule_expr):
+    A = z3.Real("A")
+
+    # 1. Check that the rule is satisfiable at all (not vacuous)
+    sat_solver = z3.Solver()
+    sat_solver.add(rule_expr.to_z3())
+    if sat_solver.check() != z3.sat:
+        return False   # rule is contradictory → reject
+
+    # 2. Check implication validity:
+    #    R ∧ ¬(A > 10) is UNSAT
+    imp_solver = z3.Solver()
+    imp_solver.add(rule_expr.to_z3())
+    imp_solver.add(A <= 10)
+
+    return imp_solver.check() == z3.unsat
+
+
+def search_for_implication(initial, max_iters=1000):
+    expr = initial
+
+    for i in range(max_iters):
+        expr = mutate_one(expr)
+
+        if implies(expr):
+            print(f"\nFound rule after {i} mutations:\n{expr}")
+            return expr
+
+        if i % 50 == 0:
+            print(f"[{i}] still searching…")
+
+    print("No rule found")
+    return None
+
+
+found = search_for_implication(rule, max_iters=5000)
