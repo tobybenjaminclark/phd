@@ -146,7 +146,7 @@ class Binary(ArithExpr):
     def to_z3(self):    return self.op.to_z3(self.left.to_z3(), self.right.to_z3())
 
     @classmethod
-    def random(_):      return Binary(random.choice([Symbol.random, Number.random])(), random.choice(list(ArithOp)), random.choice([Symbol.random, Number.random])())
+    def random(_):      return Binary(Symbol.random(), random.choice(list(ArithOp)), Symbol.random())
 
 class Number(ArithExpr):
     value: float
@@ -172,6 +172,7 @@ class Symbol(ArithExpr):
 
 
 
+def set_symbol_universe(names):
+    global SYMBOLS
+    SYMBOLS = [Symbol(n) for n in names]
 
-
-SYMBOLS = list(map(lambda x: Symbol(x), ["A", "B", "C", "D"]))

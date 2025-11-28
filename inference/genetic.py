@@ -1,6 +1,5 @@
 from pr_ast import *
-
-print(rule)
+from form import *
 
 
 
@@ -48,40 +47,18 @@ def mutate_one(expr):
     return expr
 
 
-# mutate loop
-def mutate_loop(expr, steps=20):
-    print("Initial:", expr)
-    for _ in range(steps):
-        expr = mutate_one(expr)
-        print("Mutated:", expr)
-        time.sleep(0.2)
+FORM = CompleteOrderForm()
+
+set_symbol_universe(FORM.symbol_set())
 
 
-
-def implies(rule_expr):
-    A = z3.Real("A")
-    B = z3.Real("B")
-
-    # 1. Check that the rule is satisfiable at all (not vacuous)
-    sat_solver = z3.Solver()
-    sat_solver.add(rule_expr.to_z3())
-    if sat_solver.check() != z3.sat:
-        return False   # rule is contradictory → reject
-
-    # 2. Check implication validity:
-    #    R ∧ ¬(A > 10) is UNSAT
-    imp_solver = z3.Solver()
-    imp_solver.add(rule_expr.to_z3())
-    imp_solver.add(A <= B)
-
-    return imp_solver.check() == z3.unsat
-
-
+def implies(rule_ast):
+    z3_rule = rule_ast.to_z3()
+    return FORM.verify_rule(z3_rule)
 
 
 def search_for_implication(initial, max_iters=1000, reset_prob=0.01):
     expr = initial
-
     for i in range(max_iters):
 
         # random restart
@@ -98,11 +75,14 @@ def search_for_implication(initial, max_iters=1000, reset_prob=0.01):
             print(f"\nRule Simplified: {z3.simplify(expr.to_z3())}")
             return expr
 
-        if i % 50 == 0:
-            print(f"[{i}] still searching… (maybe resetting) \t \t \t")
+        if i % 50 == 0 and i != 0:
+            print(f"[{i}] still searching… (maybe resetting) \t \t \t Current-Expr = {expr}")
 
     print("No rule found")
     return None
 
 
-found = search_for_implication(rule, max_iters=5000)
+
+
+
+found = search_for_implication(Cmp(Symbol("R_i"), CmpOp.GT, Symbol("R_j")), max_iters=5000)
