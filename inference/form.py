@@ -1,10 +1,10 @@
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple
 from itertools import product
-import z3
 from enum import Enum
 from itertools import chain
 from functools import reduce
+import z3
 
 
 
@@ -55,17 +55,17 @@ class CompleteOrderForm(Form):
 
         # Type declarations
         self.variables = (
-            [(f"R_{ac}", Type.Integer) for ac in self.aircraft] +
-            [(f"B_{ac}", Type.Integer) for ac in self.aircraft] +
-            [(f"C_{ac}", Type.Integer) for ac in self.aircraft] +
-            [(f"LT_{ac}", Type.Integer) for ac in self.aircraft] +
-            [(f"ET_{ac}", Type.Integer) for ac in self.aircraft] +
-            [(f"LC_{ac}", Type.Integer) for ac in self.aircraft] +
-            [(f"EC_{ac}", Type.Integer) for ac in self.aircraft]
+            [(f"R_{ac}", Type.Real) for ac in self.aircraft] +
+            [(f"B_{ac}", Type.Real) for ac in self.aircraft] +
+            [(f"C_{ac}", Type.Real) for ac in self.aircraft] +
+            [(f"LT_{ac}", Type.Real) for ac in self.aircraft] +
+            [(f"ET_{ac}", Type.Real) for ac in self.aircraft] +
+            [(f"LC_{ac}", Type.Real) for ac in self.aircraft] +
+            [(f"EC_{ac}", Type.Real) for ac in self.aircraft]
         )
 
         # δ(x,y) for all pairs
-        self.attributes = [(f"δ_{x}_{y}", Type.Integer)
+        self.attributes = [(f"δ_{x}_{y}", Type.Real)
                            for x, y in product(self.aircraft, self.aircraft)]
 
         self.instantiate()
@@ -89,6 +89,14 @@ class CompleteOrderForm(Form):
             axiom_ab_positive_equal,
             axiom_ab_identical
         ]
+
+    def symbol_set(self):
+        # keep only symbols involving i or j
+        good = []
+        for (n, _) in self.variables + self.attributes:
+            if "_i" in n or "_j" in n:  # only names referencing i or j
+                good.append(n)
+        return good
 
     def compute_T(self, _seq):
         T, Σ = {}, self.Σ
@@ -114,13 +122,43 @@ class CompleteOrderForm(Form):
 
         # Check SAT
         solver_vacuous = z3.Solver()
-        for c in self.constraints + [lambda: rule]: solver_vacuous.add(c())
+        for c in self.constraints: solver_vacuous.add(c())
+        solver_vacuous.add(rule.to_z3())
+
         solver_vacuous.add(D1 <= D2)
-        if solver_vacuous.check() != z3.sat: return False
+        if solver_vacuous.check() != z3.sat:
+            print(f"[SMT] : Rule '{rule}' holds vacuously unsatisfiable.")
+            return False
+
+        elif solver_vacuous.check() == z3.unknown:
+            print(f"[SMT] : Rule '{rule}' cannot be vacuous-verified in SMT-logic")
+            return False
 
         solver_proof = z3.Solver()
-        for c in self.constraints + [lambda: rule]: solver_proof.add(c())
-        solver_proof.add(D1 > D2)
-        if solver_proof.check() != z3.unsat: return False
+        for c in self.constraints: solver_proof.add(c())
+        solver_proof.add(rule.to_z3())
 
-        return True
+        solver_proof.add(D1 > D2)
+        if solver_proof.check() == z3.sat:
+            print(f"[SMT] : Rule '{rule}' is not sound (counterexample found).")
+            return False
+
+        elif solver_proof.check() == z3.unknown:
+            print(f"[SMT] : Rule '{rule}' cannot be soundness-verified in SMT-logic")
+            return False
+
+        elif solver_proof.check() == z3.unsat:
+            print(f"[SMT] : Rule '{rule}' is sound (no counterexample found) and non-degenerate.")
+            return True
+
+
+from pr_ast import *
+def test_x_equals_x():
+    form = CompleteOrderForm()
+
+    print("invoking verify rule")
+    print(form.verify_rule(
+        Cmp(Symbol("R_i"), CmpOp.LE, Binary(Symbol("B_j"), ArithOp.DIV, Symbol("R_i")))
+    ))
+
+
