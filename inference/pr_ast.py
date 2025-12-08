@@ -1,7 +1,7 @@
 from __future__ import annotations
 from enum import Enum
 from unittest import case
-
+import numpy as np
 from pydantic import BaseModel
 from pydantic.config import ConfigDict
 import random
@@ -82,8 +82,11 @@ class BooleanExpr(BaseModel, Genetic, SMTConvertible):
     @classmethod
     def random(_, depth=2): return Cmp.random(depth) if depth <= 0 else random.choice([And, Or, Not, Cmp]).random(depth - 1)
 
-    def __len__(self):      return 1 + sum(len(child) for child in self)
+    def __len__(self):          return 1 + sum(len(child) for child in self)
     def eval(self, symtable):   raise NotImplementedError
+    def eval_np(self, _):       raise NotImplementedError
+    def __hash__(self):         return hash((type(self),) + tuple(self.__dict__.values()))
+
 
 class ArithExpr(BaseModel, Genetic, SMTConvertible):
     model_config = ConfigDict(frozen=False)
@@ -95,8 +98,8 @@ class ArithExpr(BaseModel, Genetic, SMTConvertible):
 
     def __len__(self):      return 1 + sum(len(child) for child in self)
     def eval(self, sample): raise NotImplementedError
-
-
+    def eval_np(self, _):   raise NotImplementedError
+    def __hash__(self):     return hash((type(self),) + tuple(self.__dict__.values()))
 
 
 
@@ -114,6 +117,7 @@ class And(BooleanExpr):
     def mutate(self):       return Or(self.left, self.right)
     def to_z3(self):        return z3.And(self.left.to_z3(), self.right.to_z3())
     def eval(self, sample): return self.left.eval(sample) and self.right.eval(sample)
+    def eval_np(self, arr): return np.logical_and(self.left.eval_np(arr), self.right.eval_np(arr))
 
     @classmethod
     def random(_, depth=2):     return And(BooleanExpr.random(depth-1), BooleanExpr.random(depth-1))
@@ -129,6 +133,7 @@ class Or(BooleanExpr):
     def mutate(self):       return And(self.left, self.right)
     def to_z3(self):        return z3.Or(self.left.to_z3(), self.right.to_z3())
     def eval(self, sample): return self.left.eval(sample) or self.right.eval(sample)
+    def eval_np(self, arr): return np.logical_or(self.left.eval_np(arr), self.right.eval_np(arr))
 
     @classmethod
     def random(_, depth=2):
@@ -144,6 +149,7 @@ class Not(BooleanExpr):
     def mutate(self):       return (self.inner)
     def to_z3(self):        return z3.Not(self.inner.to_z3())
     def eval(self, sample): return not (self.inner.eval(sample))
+    def eval_np(self, arr): return np.logical_not(self.inner.eval_np(arr))
 
     @classmethod
     def random(_, depth=2):
@@ -162,6 +168,7 @@ class Cmp(BooleanExpr):
     def mutate(self):       return Cmp(self.left, random.choice(list(CmpOp)), self.right)
     def to_z3(self):        return self.op.to_z3(self.left.to_z3(), self.right.to_z3())
     def eval(self, sample): return self.op.get_op()(self.left.eval(sample), self.right.eval(sample))
+    def eval_np(self, arr): return self.op.get_op()(self.left.eval_np(arr), self.right.eval_np(arr))
 
     @classmethod
     def random(_, depth=0):
@@ -182,6 +189,8 @@ class Binary(ArithExpr):
     def mutate(self):       return Binary(self.left, random.choice(list(ArithOp)), self.right)
     def to_z3(self):        return self.op.to_z3(self.left.to_z3(), self.right.to_z3())
     def eval(self, sample): return self.op.get_op()(self.left.eval(sample), self.right.eval(sample))
+    def eval_np(self, arr): return self.op.get_op()(self.left.eval_np(arr), np.where(self.right.eval_np(arr)==0, np.inf, self.right.eval_np(arr))) if self.op==ArithOp.DIV else self.op.get_op()(self.left.eval_np(arr), self.right.eval_np(arr))
+
 
     @classmethod
     def random(_, depth=1):
@@ -194,7 +203,8 @@ class Number(ArithExpr):
     def __iter__(self):     return iter(())
     def mutate(self):       return Number(self.value + random.randrange(-50, 50) / 100)
     def to_z3(self):        return z3.RealVal(self.value)
-    def eval(self, sample): return self.value
+    def eval(self, sample): return float(self.value)
+    def eval_np(self, arr): return np.full_like(next(iter(arr.values())), float(self.value))
 
     @classmethod
     def random(_, depth=0):     return random.choice(SYMBOLS)
@@ -207,6 +217,8 @@ class Symbol(ArithExpr):
     def mutate(self):       return random.choice(SYMBOLS)
     def to_z3(self):        return z3.Real(self.iden)
     def eval(self, sample): return sample[self.iden]
+    def eval_np(self, arr): return arr[self.iden]
+
 
     @classmethod
     def random(_, depth=0):     return random.choice(SYMBOLS)

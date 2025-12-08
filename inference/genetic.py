@@ -3,6 +3,9 @@ from form import *
 from z3 import Model
 import random
 import copy
+import numpy as np
+import functools
+
 
 form = CompleteOrderForm()
 set_symbol_universe(form.symbol_set())
@@ -110,21 +113,11 @@ def mutate_one(expr):
 
 
 
-def monte_carlo(rule: BooleanExpr, n: int = 100000, low: int = 0, high: int = 1000) -> float:
-    global _MC_CACHE
-    key = (len(form.symbol_set()), n, low, high)
-
-    if key not in _MC_CACHE:
-        syms = form.symbol_set()
-        _MC_CACHE[key] = [
-            { s: random.uniform(low, high) for s in syms }
-            for _ in range(n)
-        ]
-
-    # Fast Python evaluation
-    triggers = sum(rule.eval(sample) for sample in _MC_CACHE[key])
-    return triggers / n
-
+@functools.lru_cache(None)
+def monte_carlo(rule, n=100000, low=0, high=1000):
+    syms = list(form.symbol_set())
+    env = {s: np.random.uniform(low, high, n) for s in syms}
+    return np.mean(rule.eval_np(env))
 
 
 
@@ -138,7 +131,7 @@ def gen_initial(number: int) -> [BooleanExpr]:
 def _fitness(β: BooleanExpr, Σ: [Model], βmax: int) -> float:
     β_z3 = β.to_z3()
 
-    ω1, ω2, ω3 = 0.0, 0.0, 3.0
+    ω1, ω2, ω3 = 0.0, 0.2, 2.8
 
     return (
 
