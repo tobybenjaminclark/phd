@@ -7,9 +7,20 @@ import numpy as np
 import functools
 
 
-form = CompleteOrderForm()
-set_symbol_universe(form.symbol_set())
-_MC_CACHE = {}
+
+
+
+
+
+import time
+TIMINGS = {}
+
+def timed(name, fn):
+    start = time.perf_counter()
+    out = fn()
+    TIMINGS[name] = TIMINGS.get(name, 0) + (time.perf_counter() - start)
+    return out
+
 
 
 
@@ -113,8 +124,12 @@ def mutate_one(expr):
 
 
 
+
+form = CompleteOrderForm()
+
 @functools.lru_cache(None)
-def monte_carlo(rule, n=100000, low=0, high=1000):
+def monte_carlo(rule, n = 50_000, low = 0, high = 1_000):
+    """ Monte-Carlo approximation to calculate the activation percentage of a pruning condition """
     syms = list(form.symbol_set())
     env = {s: np.random.uniform(low, high, n) for s in syms}
     return np.mean(rule.eval_np(env))
@@ -126,47 +141,49 @@ def gen_initial(number: int) -> [BooleanExpr]:
 
 
 
-
-
-def _fitness(β: BooleanExpr, Σ: [Model], βmax: int) -> float:
+def _fitness(β: BooleanExpr, Σ, βmax: int) -> [float]:
     β_z3 = β.to_z3()
 
-    ω1, ω2, ω3 = 0.0, 0.2, 2.8
+    # weights
+    ω1, ω2, ω3 = 1.5, 1.0, 1.0
 
-    return (
+    # --- term 1: labelled examples accuracy ---
+    if Σ:
+        correct = 0
+        for (model, expected) in Σ:
+            val = z3.is_true(model.eval(β_z3, model_completion=True))
+            correct += (val == expected)
+        t1 = correct / len(Σ)
+    else:
+        t1 = 0.5
 
-        # What % of Σ* does β satisfy?
-        ω1 * ( sum([ 0 if z3.is_true(model.eval(β_z3, model_completion=True)) else 1 for model in Σ ]) / (len(Σ) + 1) ) +
+    # --- term 2: size penalty ---
+    t2 = 1 - (len(β) / βmax)
 
-        # What percentile (no. of nodes) is β in?
-        ω2 * ( 1 - ( len(β) / βmax ) ) +
+    # --- term 3: Monte Carlo activation ---
+    p = monte_carlo(β)
+    eps = 1e-9
+    t3 = -(p * np.log(p + eps) + (1 - p) * np.log((1 - p) + eps))
 
-        # What ~percentage of states does β trigger on?
-        ω3 * monte_carlo(β)
-    ) / 3
-
-
-
+    score = (ω1*t1 + ω2*t2 + ω3*t3) / (ω1 + ω2 + ω3)
+    return score, t1, t2, t3
 
 
-def fitness(population: [BooleanExpr], Σ: []) -> [(BooleanExpr, float)]:
+
+def fitness(population: [BooleanExpr], Σ):
     βmax = len(max(population, key=lambda β: len(β)))
-    return list(map(
-        lambda β: (β, _fitness(β, [], βmax)),
-        population
-    ))
+    return [(β, *_fitness(β, Σ, βmax)) for β in population]
+
 
 
 
 
 
 # The top 25% make it through
-def selection(fitness_population: [(BooleanExpr, float)]) -> [BooleanExpr]:
-    ranked =        sorted(fitness_population, key=lambda x: x[1], reverse=True)
-    survivors =     [expr for expr, score in ranked[:len(ranked) // 4]]
-    return          [None for _ in range(len(fitness_population) - len(survivors))] + survivors
-
-
+def selection(fitpop: [(BooleanExpr, float)]) -> [BooleanExpr]:
+    ranked =        sorted(fitpop, key=lambda x: x[1], reverse=True)
+    survivors =     [expr for expr, *_ in ranked[:len(ranked)//4]]
+    return          [None]*(len(fitpop)-len(survivors)) + survivors
 
 
 
@@ -177,7 +194,6 @@ def crossover(population: [BooleanExpr]) -> [BooleanExpr]:
         population[idx] = breed(*random.sample(fertile, 2))
 
     return population
-
 
 
 
@@ -192,28 +208,45 @@ def mutation(population: [BooleanExpr]) -> [BooleanExpr]:
 
 
 
-def genetic_algorithm(starting = 10, generations = 1000, elite = 2):
+
+
+
+
+
+
+
+def genetic_algorithm(starting=10, generations=1000, elite=2, Σ=None):
+    if Σ is None:
+        Σ = []
+
     population = gen_initial(starting)
 
     for gen_num in range(generations):
-        fitpop = fitness(population, [])
+        fitpop = timed("fitness", lambda: fitness(population, Σ))
 
-        #maxlen = max(len(str(expr)) for expr, _ in fitpop)
         print(f"Generation {gen_num}")
-        for expr, score in fitpop:
+        for rank, (expr, score, t1, t2, t3) in enumerate(fitpop, 1):
             expr_str = str(expr)
-            print(f"\t- {expr_str:<{100}}  score {score:.4f}")
+            print(f"[{rank:^4}] {expr_str:<50} (Score of {score:.4f} \t Σ:{t1:.3f}, \t βmax: {t2:.3f}, \t #: {t3:.3f})")
+
+        elites = [expr for expr, *rest in sorted(fitpop, key=lambda x: x[1], reverse=True)[:elite]]
 
 
-        elites = [expr for expr, _ in sorted(fitpop, key=lambda x: x[1], reverse=True)[:elite]]
-
-        surpop = selection(fitpop)
-        sexpop = crossover(surpop)
-        mutpop = mutation(sexpop)
+        surpop = timed("selection", lambda: selection(fitpop))
+        sexpop = timed("crossover", lambda: crossover(surpop))
+        mutpop = timed("mutation", lambda: mutation(sexpop))
 
         # protect elites
         mutpop[:elite] = elites
         population = mutpop
 
+        print("\n  Time profile so far:")
+        for k, v in TIMINGS.items():
+            print(f"    {k:<10}: {v:.6f}s")
+        print()
 
-genetic_algorithm()
+    # return best from final generation
+    final_fit = fitness(population, Σ)
+    best, *rest = max(final_fit, key=lambda x: x[1])
+    return best, rest[0]
+

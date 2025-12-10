@@ -326,5 +326,5 @@ def cegis(
 
 
 
-seed = Cmp(Symbol("R_i"), CmpOp.LE, Symbol("R_j"))
+seed = Cmp(Symbol("LT_i"), CmpOp.LE, Symbol("LT_j"))
 found = cegis(seed, max_rounds=15000, max_inner_iters=25000, reset_prob=0.01)

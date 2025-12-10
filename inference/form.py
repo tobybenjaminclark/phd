@@ -5,7 +5,7 @@ from enum import Enum
 from itertools import chain
 from functools import reduce
 import z3
-
+from pr_ast import BooleanExpr
 
 
 # Symbolic Maximums in Z3
@@ -150,6 +150,34 @@ class CompleteOrderForm(Form):
         elif solver_proof.check() == z3.unsat:
             print(f"[SMT] : Rule '{rule}' is sound (no counterexample found) and non-degenerate.")
             return True
+
+    def find_unsound_counterexample(self, rule: BooleanExpr) -> z3.Model:
+        SEQ_1 = ["σ1", "i", "σ2", "j", "σ3"]
+        SEQ_2 = ["σ1", "j", "σ2", "i", "σ3"]
+        T1 = self.compute_T(SEQ_1)
+        T2 = self.compute_T(SEQ_2)
+        D1 = self.delay_cost(T1)
+        D2 = self.delay_cost(T2)
+
+        s = z3.Solver()
+        for c in self.constraints:
+            s.add(c())
+        s.add(rule.to_z3())
+        s.add(D1 > D2)
+
+        if s.check() == z3.sat:
+            return s.model()
+        else:
+            return None
+
+    def is_rule_satisfiable(self, rule: BooleanExpr) -> bool:
+        """Check ∃ model. constraints ∧ rule."""
+        s = z3.Solver()
+        for c in self.constraints:
+            s.add(c())
+        s.add(rule.to_z3())
+        return s.check() == z3.sat
+
 
 
 from pr_ast import *

@@ -11,7 +11,13 @@ import z3
 
 
 
+# Define a trait necessitating an object is evaluable
+class Evaluable:
+    def eval(self):    raise NotImplementedError()
 
+# Define a trait necessitating an object is evaluable within Numpy
+class NumpyEvaluable:
+    def eval(self):    raise NotImplementedError()
 
 # Define a trait necessitating an object must convert to SMT
 class SMTConvertible:
@@ -75,7 +81,7 @@ class ArithOp(SMTConvertible, str, Enum):
 
 
 # Base Expressions
-class BooleanExpr(BaseModel, Genetic, SMTConvertible):
+class BooleanExpr(BaseModel, Genetic, SMTConvertible, Evaluable, NumpyEvaluable):
     model_config = ConfigDict(frozen=False)
     def mutate(self):   raise NotImplementedError()
 
@@ -83,12 +89,11 @@ class BooleanExpr(BaseModel, Genetic, SMTConvertible):
     def random(_, depth=2): return Cmp.random(depth) if depth <= 0 else random.choice([And, Or, Not, Cmp]).random(depth - 1)
 
     def __len__(self):          return 1 + sum(len(child) for child in self)
-    def eval(self, symtable):   raise NotImplementedError
     def eval_np(self, _):       raise NotImplementedError
     def __hash__(self):         return hash((type(self),) + tuple(self.__dict__.values()))
 
 
-class ArithExpr(BaseModel, Genetic, SMTConvertible):
+class ArithExpr(BaseModel, Genetic, SMTConvertible, Evaluable, NumpyEvaluable):
     model_config = ConfigDict(frozen=False)
     def mutate(self):       raise NotImplementedError()
 
@@ -97,7 +102,6 @@ class ArithExpr(BaseModel, Genetic, SMTConvertible):
         return Symbol.random() if depth <= 0 else random.choice([Binary, Symbol]).random(depth-1)
 
     def __len__(self):      return 1 + sum(len(child) for child in self)
-    def eval(self, sample): raise NotImplementedError
     def eval_np(self, _):   raise NotImplementedError
     def __hash__(self):     return hash((type(self),) + tuple(self.__dict__.values()))
 
