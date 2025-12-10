@@ -1,13 +1,14 @@
 from __future__ import annotations
 from enum import Enum
-from unittest import case
 import numpy as np
 from pydantic import BaseModel
 from pydantic.config import ConfigDict
 import random
 import operator
-import time
 import z3
+import copy
+
+
 
 
 
@@ -80,6 +81,8 @@ class ArithOp(SMTConvertible, str, Enum):
 
 
 
+
+
 # Base Expressions
 class BooleanExpr(BaseModel, Genetic, SMTConvertible, Evaluable, NumpyEvaluable):
     model_config = ConfigDict(frozen=False)
@@ -92,6 +95,10 @@ class BooleanExpr(BaseModel, Genetic, SMTConvertible, Evaluable, NumpyEvaluable)
     def eval_np(self, _):       raise NotImplementedError
     def __hash__(self):         return hash((type(self),) + tuple(self.__dict__.values()))
 
+    def walk(self):
+        yield self
+        for child in self:
+            yield from child.walk()
 
 class ArithExpr(BaseModel, Genetic, SMTConvertible, Evaluable, NumpyEvaluable):
     model_config = ConfigDict(frozen=False)
@@ -104,6 +111,11 @@ class ArithExpr(BaseModel, Genetic, SMTConvertible, Evaluable, NumpyEvaluable):
     def __len__(self):      return 1 + sum(len(child) for child in self)
     def eval_np(self, _):   raise NotImplementedError
     def __hash__(self):     return hash((type(self),) + tuple(self.__dict__.values()))
+
+    def walk(self):
+        yield self
+        for child in self:
+            yield from child.walk()
 
 
 
@@ -226,6 +238,30 @@ class Symbol(ArithExpr):
 
     @classmethod
     def random(_, depth=0):     return random.choice(SYMBOLS)
+
+
+
+
+
+def replace_subtree(root, target, repl):
+    """Return a tree where one subtree is replaced. Mutates only if needed."""
+    if root is target:
+        return repl
+
+    for attr, val in root.__dict__.items():
+        if val is target:
+            setattr(root, attr, copy.deepcopy(repl))
+            return root
+
+        if isinstance(val, (BooleanExpr, ArithExpr)):
+            new = replace_subtree(val, target, repl)
+            if new is not val:
+                setattr(root, attr, new)
+                return root
+
+    return root
+
+
 
 
 

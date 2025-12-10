@@ -1,7 +1,7 @@
 import time
 from form import CompleteOrderForm
 from pr_ast import *
-from genetic import genetic_algorithm
+from genetic import ProgramSearch
 
 form = CompleteOrderForm()
 set_symbol_universe(form.symbol_set())
@@ -58,9 +58,9 @@ def cegis(form: CompleteOrderForm,
     for outer in range(max_rounds):
         print(f"\n=== CEGIS round {outer} (|Σ|={len(Σ)}) | Verified={len(verified_rules)} ===")
 
-        best, best_score = genetic_algorithm(
-            starting=starting,
-            generations=generations,
+        best, best_score = ProgramSearch.genetic_algorithm(
+            start=starting,
+            gens=generations,
             elite=elite,
             Σ=Σ
         )

@@ -1,19 +1,23 @@
 from pr_ast import *
 from form import *
 from z3 import Model
-import random
-import copy
-import numpy as np
-import functools
+import random, copy, numpy as np, functools, time
 
 
 
-
-
-
-
-import time
 TIMINGS = {}
+FORM = CompleteOrderForm()
+
+@functools.lru_cache(None)
+def monte_carlo(rule, n=50_000, low=0, high=1_000):
+    syms = list(FORM.symbol_set())
+    env = {s: np.random.uniform(low, high, n) for s in syms}
+    return np.mean(rule.eval_np(env))
+
+def entropy(p, eps=1e-9):
+    return -(p*np.log(p+eps) + (1-p)*np.log(1-p+eps))
+
+
 
 def timed(name, fn):
     start = time.perf_counter()
@@ -25,228 +29,135 @@ def timed(name, fn):
 
 
 
+class ProgramSearch:
 
-def breed(a: BooleanExpr, b: BooleanExpr) -> BooleanExpr:
-    def collect_nodes(expr, classes):
-        nodes = []
 
-        def _walk(node):
-            if isinstance(node, classes):
-                nodes.append(node)
-            for child in node:
-                _walk(child)
+    @staticmethod
+    def _collect(expr, kinds):
+        return [n for n in expr.walk() if isinstance(n, kinds)]
 
-        _walk(expr)
-        return nodes
 
-    def replace_subtree(root, target, replacement):
-        if root is target:
-            return replacement
+    @staticmethod
+    def find_parent(expr, target):
+        return next(((p, k) for p in expr.walk() for k, v in p.__dict__.items() if v is target), (None, None))
 
-        for field_name, field_value in root.__dict__.items():
-            if field_value is target:
-                setattr(root, field_name, copy.deepcopy(replacement))
-                return root
 
-            if isinstance(field_value, (BooleanExpr, ArithExpr)):
-                replaced = replace_subtree(field_value, target, replacement)
-                if replaced is not field_value:
-                    setattr(root, field_name, replaced)
-                    return root
+    @staticmethod
+    def breed(a: BooleanExpr, b: BooleanExpr) -> BooleanExpr:
+        """Cross two trees at compatible AST nodes."""
+        a = copy.deepcopy(a)
+        nodes_a = ProgramSearch._collect(a, (BooleanExpr, ArithExpr))
+        nodes_b = ProgramSearch._collect(copy.deepcopy(b), (BooleanExpr, ArithExpr))
 
-        return root
+        cut_a = random.choice(nodes_a)
 
-    # Copy to avoid mutating both parents
-    a_copy = copy.deepcopy(a)
-    b_copy = copy.deepcopy(b)
+        same_type = [n for n in nodes_b if isinstance(n, type(cut_a))]
+        same_kind = [n for n in nodes_b if isinstance(n, BooleanExpr) == isinstance(cut_a, BooleanExpr)]
+        cut_b = random.choice(same_type or same_kind or nodes_b)
 
-    # Collect ALL possible crossover nodes
-    a_nodes = collect_nodes(a_copy, (BooleanExpr, ArithExpr))
-    b_nodes = collect_nodes(b_copy, (BooleanExpr, ArithExpr))
+        return replace_subtree(a, cut_a, cut_b)
 
-    # Pick random subtree from A
-    subtree_a = random.choice(a_nodes)
 
-    # Find matching candidates in B
-    same_type = [n for n in b_nodes if isinstance(n, type(subtree_a))]
-    same_family = [
-        n for n in b_nodes
-        if isinstance(n, BooleanExpr) and isinstance(subtree_a, BooleanExpr) or
-           isinstance(n, ArithExpr) and isinstance(subtree_a, ArithExpr)
-    ]
+    @staticmethod
+    def mutate_one(expr):
+        """Mutate an expression."""
 
-    candidates = same_type or same_family or b_nodes
-    subtree_b = random.choice(candidates)
+        node = random.choice(ProgramSearch._collect(expr, (BooleanExpr, ArithExpr)))
+        parent, field = ProgramSearch.find_parent(expr, node)
 
-    # Perform crossover
-    replace_subtree(a_copy, subtree_a, subtree_b)
-    return a_copy
+        # 30%: full replacement
+        if random.random() < 0.3:
+            repl = node.__class__.random()
+            return repl if parent is None else (setattr(parent, field, repl) or expr)
 
+        # 70%: local mutate()
+        new = node.mutate()
+        if not new or new is node:
+            return expr
+        return new if parent is None else (setattr(parent, field, new) or expr)
 
 
+    @staticmethod
+    def gen_initial(n):
+        return [BooleanExpr.random(random.choice([1, 2, 3, 4])) for _ in range(n)]
 
 
+    @staticmethod
+    def selection(fitpop):
+        """Keep top 25% by score; others replaced with None for breeding."""
+        top = sorted(fitpop, key=lambda x: x[1], reverse=True)
+        k = len(top) // 4
+        survivors = [expr for expr, *_ in top[:k]]
+        return [None] * (len(top) - k) + survivors
 
-def mutate_one(expr):
-    # indexed walk
-    def indexed_walk(expr):
-        stack = [(None, None, expr)]
-        while stack:
-            parent, field, node = stack.pop()
-            yield parent, field, node
-            for child in node:
-                for k, v in node.__dict__.items():
-                    if v is child:
-                        stack.append((node, k, child))
-                        break
 
-    nodes = list(indexed_walk(expr))
-    parent, field, node = random.choice(nodes)
+    @staticmethod
+    def crossover(pop):
+        fertile = [p for p in pop if p is not None]
+        for i, v in enumerate(pop):
+            if v is None:
+                pop[i] = ProgramSearch.breed(*random.sample(fertile, 2))
+        return pop
 
-    # 30% chance: subtree replacement with same type
-    if random.random() < 0.3:
-        new_node = node.__class__.random()
-        if parent is None:
-            return new_node
-        setattr(parent, field, new_node)
-        return expr
 
-    # Otherwise use node's local mutate()
-    result = node.mutate()
+    @staticmethod
+    def mutation(pop, chance=0.5):
+        return [ProgramSearch.mutate_one(p) if random.random() < chance else p for p in pop]
 
-    if result is None or result is node:
-        return expr
 
-    if parent is None:
-        return result
-    setattr(parent, field, result)
-    return expr
+    @staticmethod
+    def _fitness(β: BooleanExpr, Σ: [z3.Model], βmax: int) -> (float, float, float):
+        βz = β.to_z3()
+        return (
+            (sum(z3.is_true(m.eval(βz, model_completion=True)) == e for m, e in Σ) / len(Σ)) if Σ else 0.5,
+            1 - len(β) / βmax,
+            entropy(monte_carlo(β))
+        )
 
 
+    @staticmethod
+    def fitness(pop: [BooleanExpr], Σ) -> [float]:
+        βmax = len(max(pop, key=len))
+        ω = (1.5, 1.0, 1.0)
+        return [
+            (β, (ω[0] * t1 + ω[1] * t2 + ω[2] * t3) / sum(ω), t1, t2, t3)
+            for β in pop
+            for (t1, t2, t3) in (ProgramSearch._fitness(β, Σ, βmax),)
+        ]
 
 
-form = CompleteOrderForm()
+    @staticmethod
+    def run_generation(pop, Σ, elite=2):
+        """Run one generation step and return the next population."""
 
-@functools.lru_cache(None)
-def monte_carlo(rule, n = 50_000, low = 0, high = 1_000):
-    """ Monte-Carlo approximation to calculate the activation percentage of a pruning condition """
-    syms = list(form.symbol_set())
-    env = {s: np.random.uniform(low, high, n) for s in syms}
-    return np.mean(rule.eval_np(env))
+        fitpop = timed("fitness", lambda: ProgramSearch.fitness(pop, Σ))
 
+        elites = [e for e, *_ in sorted(fitpop, key=lambda x: x[1], reverse=True)[:elite]]
 
+        surpop = ProgramSearch.selection(fitpop)
+        sexpop = timed("crossover", lambda: ProgramSearch.crossover(surpop))
+        mutpop = timed("mutation", lambda: ProgramSearch.mutation(sexpop))
 
-def gen_initial(number: int) -> [BooleanExpr]:
-    return [BooleanExpr.random(random.choice([1, 2, 3, 4])) for _ in range(number)]
-
-
-
-def _fitness(β: BooleanExpr, Σ, βmax: int) -> [float]:
-    β_z3 = β.to_z3()
-
-    # weights
-    ω1, ω2, ω3 = 1.5, 1.0, 1.0
-
-    # --- term 1: labelled examples accuracy ---
-    if Σ:
-        correct = 0
-        for (model, expected) in Σ:
-            val = z3.is_true(model.eval(β_z3, model_completion=True))
-            correct += (val == expected)
-        t1 = correct / len(Σ)
-    else:
-        t1 = 0.5
-
-    # --- term 2: size penalty ---
-    t2 = 1 - (len(β) / βmax)
-
-    # --- term 3: Monte Carlo activation ---
-    p = monte_carlo(β)
-    eps = 1e-9
-    t3 = -(p * np.log(p + eps) + (1 - p) * np.log((1 - p) + eps))
-
-    score = (ω1*t1 + ω2*t2 + ω3*t3) / (ω1 + ω2 + ω3)
-    return score, t1, t2, t3
-
-
-
-def fitness(population: [BooleanExpr], Σ):
-    βmax = len(max(population, key=lambda β: len(β)))
-    return [(β, *_fitness(β, Σ, βmax)) for β in population]
-
-
-
-
-
-
-# The top 25% make it through
-def selection(fitpop: [(BooleanExpr, float)]) -> [BooleanExpr]:
-    ranked =        sorted(fitpop, key=lambda x: x[1], reverse=True)
-    survivors =     [expr for expr, *_ in ranked[:len(ranked)//4]]
-    return          [None]*(len(fitpop)-len(survivors)) + survivors
-
-
-
-def crossover(population: [BooleanExpr]) -> [BooleanExpr]:
-    fertile =           list(filter(lambda v: v is not None, population))
-
-    for idx, _ in filter(lambda idx_v: idx_v[1] is None, enumerate(population)):
-        population[idx] = breed(*random.sample(fertile, 2))
-
-    return population
-
-
-
-def mutation(population: [BooleanExpr]) -> [BooleanExpr]:
-    return list(map(
-        lambda β: mutate_one(β) if (random.random() < 0.5) else β,
-        population
-    ))
-
-
-
-
-
-
-
-
-
-
-
-
-
-def genetic_algorithm(starting=10, generations=1000, elite=2, Σ=None):
-    if Σ is None:
-        Σ = []
-
-    population = gen_initial(starting)
-
-    for gen_num in range(generations):
-        fitpop = timed("fitness", lambda: fitness(population, Σ))
-
-        print(f"Generation {gen_num}")
-        for rank, (expr, score, t1, t2, t3) in enumerate(fitpop, 1):
-            expr_str = str(expr)
-            print(f"[{rank:^4}] {expr_str:<50} (Score of {score:.4f} \t Σ:{t1:.3f}, \t βmax: {t2:.3f}, \t #: {t3:.3f})")
-
-        elites = [expr for expr, *rest in sorted(fitpop, key=lambda x: x[1], reverse=True)[:elite]]
-
-
-        surpop = timed("selection", lambda: selection(fitpop))
-        sexpop = timed("crossover", lambda: crossover(surpop))
-        mutpop = timed("mutation", lambda: mutation(sexpop))
-
-        # protect elites
         mutpop[:elite] = elites
-        population = mutpop
+        return mutpop, fitpop
 
-        print("\n  Time profile so far:")
-        for k, v in TIMINGS.items():
-            print(f"    {k:<10}: {v:.6f}s")
-        print()
 
-    # return best from final generation
-    final_fit = fitness(population, Σ)
-    best, *rest = max(final_fit, key=lambda x: x[1])
-    return best, rest[0]
+    @staticmethod
+    def genetic_algorithm(start=10, gens=1000, elite=2, Σ=None):
+        Σ = Σ or []
+        pop = ProgramSearch.gen_initial(start)
 
+        for g in range(gens):
+            pop, fitpop = ProgramSearch.run_generation(pop, Σ, elite)
+
+            print(f"Generation {g}")
+            for i, (expr, sc, t1, t2, t3) in enumerate(fitpop, 1):
+                print(f"[{i:^3}] {expr!s:<45} (score {sc:.4f} Σ:{t1:.3f} β:{t2:.3f} H:{t3:.3f})")
+
+            print("\nTime profile:")
+            for k, v in TIMINGS.items():
+                print(f"  {k:<10} {v:.6f}s")
+            print()
+
+        best = max(ProgramSearch.fitness(pop, Σ), key=lambda x: x[1])
+        return best[0], best[1]  # expr, score
