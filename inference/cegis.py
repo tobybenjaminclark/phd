@@ -58,7 +58,7 @@ def cegis(form: CompleteOrderForm,
     for outer in range(max_rounds):
         print(f"\n=== CEGIS round {outer} (|Σ|={len(Σ)}) | Verified={len(verified_rules)} ===")
 
-        best, best_score = ProgramSearch.genetic_algorithm(
+        best, best_score = ProgramSearch.search(
             start=starting,
             gens=generations,
             elite=elite,

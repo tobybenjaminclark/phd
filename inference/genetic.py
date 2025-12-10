@@ -3,10 +3,19 @@ from form import *
 from z3 import Model
 import random, copy, numpy as np, functools, time
 
+def timed(name, fn):
+    start = time.perf_counter()
+    out = fn()
+    TIMINGS[name] = TIMINGS.get(name, 0) + (time.perf_counter() - start)
+    return out
 
 
 TIMINGS = {}
 FORM = CompleteOrderForm()
+
+
+
+
 
 @functools.lru_cache(None)
 def monte_carlo(rule, n=50_000, low=0, high=1_000):
@@ -16,14 +25,6 @@ def monte_carlo(rule, n=50_000, low=0, high=1_000):
 
 def entropy(p, eps=1e-9):
     return -(p*np.log(p+eps) + (1-p)*np.log(1-p+eps))
-
-
-
-def timed(name, fn):
-    start = time.perf_counter()
-    out = fn()
-    TIMINGS[name] = TIMINGS.get(name, 0) + (time.perf_counter() - start)
-    return out
 
 
 
@@ -78,35 +79,33 @@ class ProgramSearch:
 
 
     @staticmethod
-    def gen_initial(n):
+    def gen_initial(n: int):
+        """ Generate an initial population of `n` boolean expressions."""
         return [BooleanExpr.random(random.choice([1, 2, 3, 4])) for _ in range(n)]
 
 
     @staticmethod
     def selection(fitpop):
-        """Keep top 25% by score; others replaced with None for breeding."""
-        top = sorted(fitpop, key=lambda x: x[1], reverse=True)
-        k = len(top) // 4
-        survivors = [expr for expr, *_ in top[:k]]
-        return [None] * (len(top) - k) + survivors
+        """ Keep top 25% by fitness; others replaced with None for breeding. """
+        ranked = sorted(fitpop, key=lambda x: x[1], reverse=True)
+        return [expr for expr, *_ in ranked[:len(ranked) // 4]] + [None] * (len(ranked) - len(ranked) // 4)
 
 
     @staticmethod
     def crossover(pop):
-        fertile = [p for p in pop if p is not None]
-        for i, v in enumerate(pop):
-            if v is None:
-                pop[i] = ProgramSearch.breed(*random.sample(fertile, 2))
-        return pop
+        """ Perform crossover on a population of expressions, replaces 'None' members with children """
+        return [v or ProgramSearch.breed(*random.sample([p for p in pop if p], 2)) for v in pop]
 
 
     @staticmethod
     def mutation(pop, chance=0.5):
+        """ Mutate a population of expressions """
         return [ProgramSearch.mutate_one(p) if random.random() < chance else p for p in pop]
 
 
     @staticmethod
     def _fitness(β: BooleanExpr, Σ: [z3.Model], βmax: int) -> (float, float, float):
+        """ Compute fitness for a singular boolean expression. """
         βz = β.to_z3()
         return (
             (sum(z3.is_true(m.eval(βz, model_completion=True)) == e for m, e in Σ) / len(Σ)) if Σ else 0.5,
@@ -117,6 +116,7 @@ class ProgramSearch:
 
     @staticmethod
     def fitness(pop: [BooleanExpr], Σ) -> [float]:
+        """ Compute weighted fitness for a generation of boolean expressions. """
         βmax = len(max(pop, key=len))
         ω = (1.5, 1.0, 1.0)
         return [
@@ -143,7 +143,9 @@ class ProgramSearch:
 
 
     @staticmethod
-    def genetic_algorithm(start=10, gens=1000, elite=2, Σ=None):
+    def search(start = 10, gens = 1000, elite = 2, Σ = None):
+        """ Run a program search """
+
         Σ = Σ or []
         pop = ProgramSearch.gen_initial(start)
 
