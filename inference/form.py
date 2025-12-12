@@ -87,7 +87,6 @@ class CompleteOrderForm(Form):
             axiom_r_after_b,
             axiom_delta_bounds,
             axiom_ab_positive_equal,
-            axiom_ab_identical
         ]
 
     def symbol_set(self):

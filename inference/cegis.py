@@ -55,20 +55,33 @@ class CEGIS:
                 f"Monte: {monte:7.4f}"
             )
 
-        if not self.form.is_rule_satisfiable(best):
-            tqdm.write(" ► Top rule is 𝗩𝗔𝗖𝗨𝗢𝗨𝗦𝗟𝗬-𝗨𝗡𝗦𝗔𝗧𝗜𝗦𝗙𝗜𝗔𝗕𝗟𝗘 (removing from population)")
-            self.pop = [r for r in self.pop if str(r) != str(best)]
-            return
+        # Check top-n candidates for counterexamples
+        TOP_N = 3
+        topn = sorted(fitpop, key=lambda x: x[1], reverse=True)[:TOP_N]
 
-        cex = self.form.find_unsound_counterexample(best)
-        if cex is None:
-            tqdm.write(" ► Top rule is 𝗦𝗢𝗨𝗡𝗗 (appending rule into verified-solutions)")
-            self.verified_rules.append(best)
-            return
-        else:
-            tqdm.write(" ► Top rule is 𝗨𝗡𝗦𝗢𝗨𝗡𝗗 (appending counter-example into Σ*)")
+        for rank, (candidate, *_scores) in enumerate(topn, start=1):
 
-        self.Σ.append((cex, False))
+            if not self.form.is_rule_satisfiable(candidate):
+                tqdm.write(
+                    f" ► [{rank}] candidate is 𝗩𝗔𝗖𝗨𝗢𝗨𝗦𝗟𝗬-𝗨𝗡𝗦𝗔𝗧𝗜𝗦𝗙𝗜𝗔𝗕𝗟𝗘 (removing from population)"
+                )
+                self.pop = [r for r in self.pop if str(r) != str(candidate)]
+                continue
+
+            cex = self.form.find_unsound_counterexample(candidate)
+
+            if cex is None:
+                tqdm.write(
+                    f" ► [{rank}] candidate is 𝗦𝗢𝗨𝗡𝗗 (appending rule into verified-solutions)"
+                )
+                self.verified_rules.append(candidate)
+                continue
+
+            tqdm.write(
+                f" ► [{rank}] candidate is 𝗨𝗡𝗦𝗢𝗨𝗡𝗗 (appending counter-example into Σ*)"
+            )
+            self.Σ.append((cex, False))
+            return
 
     def synthesise(self) -> [BooleanExpr]:
         for outer in range(self.max_rounds):
@@ -87,8 +100,8 @@ if __name__ == "__main__":
     cegis = CEGIS(
         form,
         max_rounds = 250,
-        starting = 200,
-        generations = 20,
+        starting = 100,
+        generations = 100,
         elite = 5,
         target_solutions=math.inf,
     )

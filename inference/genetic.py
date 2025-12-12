@@ -19,7 +19,7 @@ def timed(name, fn):
 
 
 @functools.lru_cache(None)
-def mc_env(n=50_000, low=0, high=1_000):
+def mc_env(n=100_000, low=0, high=1_000):
     syms = list(FORM.symbol_set())
     return {
         s: np.random.uniform(low, high, n)
@@ -27,7 +27,7 @@ def mc_env(n=50_000, low=0, high=1_000):
     }
 
 @functools.lru_cache(None)
-def mc_signature(rule, n=50_000):
+def mc_signature(rule, n=100_000):
     env = mc_env(n)
     return rule.eval_np(env).astype(np.bool_)
 
@@ -41,7 +41,7 @@ def _equiv_z3(a_z3, b_z3):
     return s.check() == z3.unsat
 
 @functools.lru_cache(None)
-def monte_carlo(rule, n=50_000, low=0, high=1_000):
+def monte_carlo(rule, n=100_000, low=0, high=1_000):
     env = mc_env(n, low, high)
     return np.mean(rule.eval_np(env))
 
