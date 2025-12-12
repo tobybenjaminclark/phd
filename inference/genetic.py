@@ -1,6 +1,5 @@
 from pr_ast import *
 from form import *
-from z3 import Model
 import random, copy, numpy as np, functools, time
 
 def timed(name, fn):
@@ -118,7 +117,7 @@ class ProgramSearch:
     def fitness(pop: [BooleanExpr], Σ) -> [float]:
         """ Compute weighted fitness for a generation of boolean expressions. """
         βmax = len(max(pop, key=len))
-        ω = (1.5, 1.0, 1.0)
+        ω = (2.5, 1.0, 1.0)
         return [
             (β, (ω[0] * t1 + ω[1] * t2 + ω[2] * t3) / sum(ω), t1, t2, t3)
             for β in pop
@@ -143,15 +142,15 @@ class ProgramSearch:
 
 
     @staticmethod
-    def search(start = 10, gens = 1000, elite = 2, Σ = None):
-        """ Run a program search """
+    def search(start=10, gens=1000, elite=2, Σ=None, pop=None):
 
         Σ = Σ or []
-        pop = ProgramSearch.gen_initial(start)
+        pop = pop or ProgramSearch.gen_initial(start)
 
         for g in range(gens):
             pop, fitpop = ProgramSearch.run_generation(pop, Σ, elite)
 
+            """
             print(f"Generation {g}")
             for i, (expr, sc, t1, t2, t3) in enumerate(fitpop, 1):
                 print(f"[{i:^3}] {expr!s:<45} (score {sc:.4f} Σ:{t1:.3f} β:{t2:.3f} H:{t3:.3f})")
@@ -160,6 +159,7 @@ class ProgramSearch:
             for k, v in TIMINGS.items():
                 print(f"  {k:<10} {v:.6f}s")
             print()
+            """
 
         best = max(ProgramSearch.fitness(pop, Σ), key=lambda x: x[1])
-        return best[0], best[1]  # expr, score
+        return best[0], best[1], pop

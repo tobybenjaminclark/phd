@@ -8,65 +8,28 @@ set_symbol_universe(form.symbol_set())
 _MC_CACHE = {}
 
 
-def find_counterexamples(candidate: BooleanExpr,
-                         spec: z3.ExprRef,
-                         max_cex: int = 5) -> list[z3.Model]:
-    """
-    Find up to `max_cex` models where candidate != spec.
-    Returns a list of z3.Models.
-    """
-    s = z3.Solver()
-    cand = candidate.to_z3()
 
-    # Candidate should match spec; counterexamples are where they differ.
-    s.add(z3.Xor(cand, spec))
 
-    cexs = []
 
-    while len(cexs) < max_cex and s.check() == z3.sat:
-        m = s.model()
-        cexs.append(m)
+class CEGIS():
+    round_number = 0
 
-        # block this model so we can look for another one
-        blocking_literals = []
-        for d in m.decls():
-            v = m[d]
-            # Only block on interpreted values (reals/bools etc.)
-            if isinstance(v, (z3.ArithRef, z3.BoolRef)):
-                blocking_literals.append(d() != v)
+    def round(self):
 
-        if not blocking_literals:
-            break
+        self.round_number += 1
 
-        s.add(z3.Or(blocking_literals))
+        print(f"\n=== CEGIS round {self.round_number} (|Σ|={len(self.Σ)}) | Verified={len(self.verified_rules)} ===")
 
-    return cexs
-
-def cegis(form: CompleteOrderForm,
-          max_rounds: int = 50,
-          starting: int = 30,
-          generations: int = 50,
-          elite: int = 4,
-          target_solutions: int = 5):
-    """
-    Continues evolving until `target_solutions` sound and non-vacuous rules
-    have been found (or max_rounds reached).
-    """
-    Σ: list[tuple[z3.Model, bool]] = []
-    verified_rules = []
-
-    for outer in range(max_rounds):
-        print(f"\n=== CEGIS round {outer} (|Σ|={len(Σ)}) | Verified={len(verified_rules)} ===")
-
-        best, best_score = ProgramSearch.search(
-            start=starting,
-            gens=generations,
-            elite=elite,
-            Σ=Σ
+        best, best_score, pop = ProgramSearch.search(
+            start = self.starting,
+            gens = self.generations,
+            elite = self.elite,
+            Σ = self.Σ,
+            pop = self.pop
         )
+
         print(f"CEGIS candidate: {best} (score={best_score:.4f})")
 
-        # reject unsatisfiable (vacuous) rules
         if not form.is_rule_satisfiable(best):
             print("[CEGIS] Rule UNSAT under constraints -> discarding.")
             # Optional: Force rule True to get a positive training point
@@ -74,28 +37,40 @@ def cegis(form: CompleteOrderForm,
             for c in form.constraints: s.add(c())
             s.add(best.to_z3())
             if s.check() == z3.sat:
-                Σ.append((s.model(), True))
-            continue
+                self.Σ.append((s.model(), True))
+            return
 
         # Check for counterexamples (unsoundness)
         cex = form.find_unsound_counterexample(best)
         if cex is None:
             print("[CEGIS] Rule appears SOUND & non-vacuous. Recording.")
-            verified_rules.append(best)
-
-            if len(verified_rules) >= target_solutions:
-                print("\n=== Found enough verified rules ===\n")
-                return verified_rules
-
-            # Don't add a negative sample — it passed. Just continue evolving.
-            continue
+            self.verified_rules.append(best)
+            return
 
         # add counterexample as negative example
         print("[CEGIS] Unsoundness counterexample found -> adding to Σ (False).")
-        Σ.append((cex, False))
+        self.Σ.append((cex, False))
 
-    print("\n=== Max CEGIS rounds reached ===")
-    return verified_rules
+    def __init__(self, form: CompleteOrderForm, *, max_rounds: int = 50, starting: int = 30, generations: int = 50, elite: int = 4, target_solutions: int = 5):
+        self.form = form
+        self.max_rounds = max_rounds
+        self.starting = starting
+        self.generations = generations
+        self.elite = elite
+        self.target_solutions = target_solutions
+
+        self.Σ: list[tuple[z3.Model, bool]] =   []
+        self.verified_rules: [BooleanExpr] =    []
+        self.pop: [BooleanExpr] =               None
+
+    def synthesise(self) -> [BooleanExpr]:
+        for outer in range(self.max_rounds):
+            self.round()
+            if len(self.verified_rules) >= self.target_solutions:
+                print("[CEGIS] Found all rules")
+        print("\n=== Max CEGIS rounds reached ===")
+        return self.verified_rules
+
 
 
 
@@ -104,11 +79,14 @@ if __name__ == "__main__":
     form = CompleteOrderForm()
     set_symbol_universe(form.symbol_set())
 
-    rule = cegis(
+    cegis = CEGIS(
         form,
-        max_rounds=100,
-        starting=30,
-        generations=5,
+        max_rounds=250,
+        starting=10,
+        generations=25,
         elite=4
     )
-    print("Final CEGIS result:", rule)
+    rule = cegis.synthesise()
+    print("Final CEGIS result:")
+    for r in rule:
+        print(f"- {r}")

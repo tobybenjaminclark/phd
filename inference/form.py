@@ -179,7 +179,6 @@ class CompleteOrderForm(Form):
         return s.check() == z3.sat
 
 
-
 from pr_ast import *
 def test_x_equals_x():
     form = CompleteOrderForm()
