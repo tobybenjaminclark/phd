@@ -1,6 +1,7 @@
-from pr_ast import *
 from form import *
 import random, copy, numpy as np, functools, time
+from tqdm import trange
+import sys
 
 def timed(name, fn):
     start = time.perf_counter()
@@ -142,24 +143,19 @@ class ProgramSearch:
 
 
     @staticmethod
-    def search(start=10, gens=1000, elite=2, Σ=None, pop=None):
-
+    def search(start=10, gens=1000, elite=2, Σ=None, pop=None, callback=None):
         Σ = Σ or []
-        pop = pop or ProgramSearch.gen_initial(start)
 
-        for g in range(gens):
-            pop, fitpop = ProgramSearch.run_generation(pop, Σ, elite)
+        # See if CEGIS has removed any population
+        if pop is None:         pop = ProgramSearch.gen_initial(start)
+        elif len(pop) < start:  pop = pop + ProgramSearch.gen_initial(start - len(pop))
 
-            """
-            print(f"Generation {g}")
-            for i, (expr, sc, t1, t2, t3) in enumerate(fitpop, 1):
-                print(f"[{i:^3}] {expr!s:<45} (score {sc:.4f} Σ:{t1:.3f} β:{t2:.3f} H:{t3:.3f})")
+        with trange(gens, desc=" ► 𝗥𝘂𝗻𝗻𝗶𝗻𝗴 𝗣𝗿𝗼𝗴𝗿𝗮𝗺 𝗦𝗲𝗮𝗿𝗰𝗵", leave=True, file=sys.stdout, colour='green', bar_format='{l_bar}{bar:50}{r_bar}{bar:-10b}') as bar:
+            for g in bar:
+                pop, fitpop = ProgramSearch.run_generation(pop, Σ, elite)
 
-            print("\nTime profile:")
-            for k, v in TIMINGS.items():
-                print(f"  {k:<10} {v:.6f}s")
-            print()
-            """
+                if callback is not None:
+                    callback(g=g, pop=pop, fitpop=fitpop, Σ=Σ)
 
         best = max(ProgramSearch.fitness(pop, Σ), key=lambda x: x[1])
         return best[0], best[1], pop
