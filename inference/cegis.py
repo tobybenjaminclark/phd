@@ -14,14 +14,13 @@ _MC_CACHE = {}
 
 class CEGIS:
     def __init__(self, form: CompleteOrderForm, *, max_rounds=50, starting=30,
-                 generations=50, elite=4, target_solutions=5, visualiser=None):
+                 generations=50, elite=4, target_solutions=5):
         self.form = form
         self.max_rounds = max_rounds
         self.starting = starting
         self.generations = generations
         self.elite = elite
         self.target_solutions = target_solutions
-        self.visualiser = visualiser
 
         self.Σ = []
         self.verified_rules = []
@@ -69,7 +68,6 @@ class CEGIS:
         else:
             tqdm.write(" ► Top rule is 𝗨𝗡𝗦𝗢𝗨𝗡𝗗 (appending counter-example into Σ*)")
 
-        tqdm.write("\n")
         self.Σ.append((cex, False))
 
     def synthesise(self) -> [BooleanExpr]:
@@ -88,10 +86,10 @@ if __name__ == "__main__":
 
     cegis = CEGIS(
         form,
-        max_rounds=250,
-        starting=20,
-        generations=150,
-        elite=5,
+        max_rounds = 250,
+        starting = 200,
+        generations = 20,
+        elite = 5,
         target_solutions=math.inf,
     )
     rule = cegis.synthesise()
