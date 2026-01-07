@@ -166,7 +166,7 @@ class ProgramSearch:
     def fitness(pop: [BooleanExpr], Σ) -> [float]:
         """ Compute weighted fitness for a generation of boolean expressions. """
         βmax = len(max(pop, key=len))
-        ω = (2.5, 1.0, 1.0)
+        ω = (4.0, 1.0, 1.0)
         return [
             (β, (ω[0] * t1 + ω[1] * t2 + ω[2] * t3) / sum(ω), t1, t2, t3)
             for β in pop

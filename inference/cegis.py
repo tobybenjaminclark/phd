@@ -23,7 +23,7 @@ class CEGIS:
         self.target_solutions = target_solutions
 
         self.Σ = []
-        self.verified_rules = []
+        self.verified_rules = set()
         self.pop = None
         self.round_number = 0
 
@@ -38,6 +38,7 @@ class CEGIS:
             elite=self.elite,
             Σ=self.Σ,
             pop=self.pop,
+            antiduplication=False
         )
 
         self.pop = pop
@@ -46,42 +47,29 @@ class CEGIS:
         avg = sum(sc for (_, sc, *_) in fitpop) / len(fitpop)
 
         top3 = sorted(fitpop, key=lambda x: x[1], reverse=True)[:3]
-        for i, (rule, *scores) in enumerate(top3, start=1):
-            sigma, betamax, monte = scores[:3]
+        for i, (rule, total, sigma, size_pen, entropy_mc) in enumerate(top3, 1):
             tqdm.write(
-                f" ► [{i}] {str(rule):<40} | "
-                f"Σ: {sigma:7.4f} | "
-                f"βmax: {betamax:7.4f} | "
-                f"Monte: {monte:7.4f}"
+                f" ► [{i}] {str(rule):<40} :: "
+                f" {total:7.4f} | "
+                f"Σ:{sigma:7.4f} + "
+                f"|β|:{size_pen:7.4f} + "
+                f"MC:{entropy_mc:7.4f}"
             )
 
-        # Check top-n candidates for counterexamples
-        TOP_N = 3
-        topn = sorted(fitpop, key=lambda x: x[1], reverse=True)[:TOP_N]
-
-        for rank, (candidate, *_scores) in enumerate(topn, start=1):
-
-            if not self.form.is_rule_satisfiable(candidate):
-                tqdm.write(
-                    f" ► [{rank}] candidate is 𝗩𝗔𝗖𝗨𝗢𝗨𝗦𝗟𝗬-𝗨𝗡𝗦𝗔𝗧𝗜𝗦𝗙𝗜𝗔𝗕𝗟𝗘 (removing from population)"
-                )
-                self.pop = [r for r in self.pop if str(r) != str(candidate)]
-                continue
-
-            cex = self.form.find_unsound_counterexample(candidate)
-
-            if cex is None:
-                tqdm.write(
-                    f" ► [{rank}] candidate is 𝗦𝗢𝗨𝗡𝗗 (appending rule into verified-solutions)"
-                )
-                self.verified_rules.append(candidate)
-                continue
-
-            tqdm.write(
-                f" ► [{rank}] candidate is 𝗨𝗡𝗦𝗢𝗨𝗡𝗗 (appending counter-example into Σ*)"
-            )
-            self.Σ.append((cex, False))
+        if not self.form.is_rule_satisfiable(best):
+            tqdm.write(" ► Top rule is 𝗩𝗔𝗖𝗨𝗢𝗨𝗦𝗟𝗬-𝗨𝗡𝗦𝗔𝗧𝗜𝗦𝗙𝗜𝗔𝗕𝗟𝗘 (removing from population)")
+            self.pop = [r for r in self.pop if str(r) != str(best)]
             return
+
+        cex = self.form.find_unsound_counterexample(best)
+        if cex is None:
+            tqdm.write(" ► Top rule is 𝗦𝗢𝗨𝗡𝗗 (appending rule into verified-solutions)")
+            self.verified_rules.add(best)
+            return
+        else:
+            tqdm.write(" ► Top rule is 𝗨𝗡𝗦𝗢𝗨𝗡𝗗 (appending counter-example into Σ*)")
+
+        self.Σ.append((cex, False))
 
     def synthesise(self) -> [BooleanExpr]:
         for outer in range(self.max_rounds):
@@ -99,9 +87,9 @@ if __name__ == "__main__":
 
     cegis = CEGIS(
         form,
-        max_rounds = 250,
-        starting = 100,
-        generations = 100,
+        max_rounds = 100,
+        starting = 10,
+        generations = 30,
         elite = 5,
         target_solutions=math.inf,
     )
