@@ -1,3 +1,6 @@
 [submodule "external/rsp-cegis"]
 	path = external/rsp-cegis
 	url = https://github.com/tobybenjaminclark/rsp-cegis.git
+[submodule "rsp-cegis"]
+	path = rsp-cegis
+	url = https://github.com/tobybenjaminclark/rsp-cegis.git
