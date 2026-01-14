@@ -4,3 +4,6 @@
 [submodule "rsp-cegis"]
 	path = rsp-cegis
 	url = https://github.com/tobybenjaminclark/rsp-cegis.git
+[submodule "rsp-synth"]
+	path = rsp-synth
+	url = https://github.com/tobybenjaminclark/rsp-synth.git
