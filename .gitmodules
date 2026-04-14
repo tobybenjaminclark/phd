@@ -7,3 +7,6 @@
 [submodule "rsp-synth"]
 	path = rsp-synth
 	url = https://github.com/tobybenjaminclark/rsp-synth.git
+[submodule "rsp-cegar"]
+	path = rsp-cegar
+	url = https://github.com/tobybenjaminclark/rsp-cegar.git
