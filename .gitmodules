@@ -13,3 +13,6 @@
 [submodule "rsp-sygus"]
 	path = rsp-sygus
 	url = https://github.com/tobybenjaminclark/rsp-sygus.git
+[submodule "rsp-smt"]
+	path = rsp-smt
+	url = https://github.com/tobybenjaminclark/rsp-smt
