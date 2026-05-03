@@ -10,3 +10,6 @@
 [submodule "rsp-cegar"]
 	path = rsp-cegar
 	url = https://github.com/tobybenjaminclark/rsp-cegar.git
+[submodule "rsp-sygus"]
+	path = rsp-sygus
+	url = https://github.com/tobybenjaminclark/rsp-sygus.git
